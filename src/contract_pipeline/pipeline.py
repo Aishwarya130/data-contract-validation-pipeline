@@ -45,28 +45,68 @@ def run_pipeline(input_path: str | Path, contract_path: str | Path, output_dir: 
     rejected.to_csv(rejected_path, index=False)
     schema_path.write_text(json.dumps(schema_changes, indent=2), encoding="utf-8")
 
-    # Idempotent publish keyed by order_id. Re-running same batch replaces identical keys, not appends duplicates.
+   
+
+    # Idempotent publish keyed by order_id.
+    # Keep the record with the newest updated_at timestamp.
     target_path = output_dir / "orders_target.csv"
+
     if target_path.exists():
-        prior = pd.read_csv(target_path, dtype={"order_id": "string"})
+        prior = pd.read_csv(
+            target_path,
+            dtype={"order_id": "string", "customer_id": "string"}
+        )
         combined = pd.concat([prior, accepted], ignore_index=True)
-        combined = combined.drop_duplicates(subset=["order_id"], keep="last")
+
+        if not combined.empty:
+            combined["_updated_at_sort"] = pd.to_datetime(
+                combined["updated_at"], utc=True, errors="coerce"
+            )
+            # Existing target records come first when timestamps tie.
+            combined["_existing_priority"] = range(len(combined))
+
+            combined = combined.sort_values(
+                ["_updated_at_sort", "_existing_priority"],
+                ascending=[False, True],
+                na_position="last"
+            )
+            combined = combined.drop_duplicates(
+                subset=["order_id"], keep="first"
+            )
+            combined = combined.drop(
+                columns=["_updated_at_sort", "_existing_priority"]
+            )
     else:
         combined = accepted.copy()
+
     combined.to_csv(target_path, index=False)
 
     elapsed = round(time.perf_counter() - started, 4)
     ended = datetime.now(timezone.utc)
     report = {
-        "run_id": run_id, "status": "success" if not schema_changes or all(x["severity"] != "breaking" for x in schema_changes) else "completed_with_schema_break",
-        "started_at": start.isoformat(), "ended_at": ended.isoformat(),
-        "input_file": input_path.name, "input_rows": int(len(df)),
-        "accepted_rows": int(len(accepted)), "rejected_rows": int(len(rejected)),
-        "schema_change_count": len(schema_changes), "schema_changes": schema_changes,
-        "target_rows_after_publish": int(len(combined)), "elapsed_seconds": elapsed,
+        "run_id": run_id,
+        "status": "success" if not schema_changes or all(
+            x["severity"] != "breaking" for x in schema_changes
+        ) else "completed_with_schema_break",
+        "started_at": start.isoformat(),
+        "ended_at": ended.isoformat(),
+        "input_file": input_path.name,
+        "input_rows": int(len(df)),
+        "accepted_rows": int(len(accepted)),
+        "rejected_rows": int(len(rejected)),
+        "schema_change_count": len(schema_changes),
+        "schema_changes": schema_changes,
+        "target_rows_after_publish": int(len(combined)),
+        "elapsed_seconds": elapsed,
         "rows_per_second": round(len(df) / elapsed, 2) if elapsed > 0 else None,
-        "artifacts": {"accepted": str(accepted_path), "quarantine": str(rejected_path),
-                      "schema_changes": str(schema_path), "target": str(target_path)}
+        "artifacts": {
+            "accepted": str(accepted_path),
+            "quarantine": str(rejected_path),
+            "schema_changes": str(schema_path),
+            "target": str(target_path)
+        }
     }
-    (run_dir / "run_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    (run_dir / "run_report.json").write_text(
+        json.dumps(report, indent=2), encoding="utf-8"
+    )
     return report
