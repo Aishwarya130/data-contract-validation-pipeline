@@ -49,3 +49,35 @@ def test_empty_batch():
     df = pd.DataFrame(columns=["order_id","customer_id","amount","status"])
     accepted, rejected, _ = validate_batch(df, CONTRACT, customers={"C1"})
     assert accepted.empty and rejected.empty
+
+
+def test_null_required_value_is_rejected():
+    df = pd.DataFrame([{
+        "order_id": "O1",
+        "customer_id": "C1",
+        "amount": None,
+        "status": "paid"
+    }])
+
+    accepted, rejected, _ = validate_batch(
+        df, CONTRACT, customers={"C1"}
+    )
+
+    assert accepted.empty
+    assert len(rejected) == 1
+
+
+def test_non_numeric_amount_is_rejected():
+    df = pd.DataFrame([{
+        "order_id": "O1",
+        "customer_id": "C1",
+        "amount": "not-a-number",
+        "status": "paid"
+    }])
+
+    accepted, rejected, _ = validate_batch(
+        df, CONTRACT, customers={"C1"}
+    )
+
+    assert accepted.empty
+    assert len(rejected) == 1
