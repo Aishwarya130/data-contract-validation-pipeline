@@ -1,0 +1,40 @@
+contract_name: orders
+version: 1
+primary_key: order_id
+required_columns:
+  order_id:
+    type: string
+    nullable: false
+  customer_id:
+    type: string
+    nullable: false
+  order_ts:
+    type: timestamp
+    nullable: false
+  amount:
+    type: float
+    nullable: false
+  currency:
+    type: string
+    nullable: false
+    allowed_values: [INR, USD, EUR]
+  status:
+    type: string
+    nullable: false
+    allowed_values: [created, paid, shipped, cancelled, refunded]
+  updated_at:
+    type: timestamp
+    nullable: false
+optional_columns:
+  source_file:
+    type: string
+    nullable: true
+compatibility:
+  allow_additive_nullable_columns: true
+  breaking_on_removed_columns: true
+  breaking_on_type_change: true
+  breaking_on_nullable_to_required: true
+business_rules:
+  amount_min: 0
+  require_customer_reference: true
+  reject_future_order_ts: true
