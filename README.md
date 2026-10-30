@@ -56,12 +56,12 @@ Each run writes to `data/output/runs/<run_id>/`:
 - `schema_changes.json`: missing/unexpected schema columns and severity.
 - `run_report.json`: run status, input/accepted/rejected counts, timing, throughput, and artifact paths.
 
-The current-state published target is `data/output/orders_target.csv`. Publishing is idempotent by `order_id`: a repeated key replaces the previous target row instead of adding another copy.
+The current-state published target is `data/output/orders_target.csv`. Publishing maintains one row per `order_id` and keeps the record with the latest `updated_at`. If timestamps are equal, the existing target record is retained.
 
 ## Contract compatibility policy
 Use `compare-contracts` to compare contract versions:
 ```bash
-contract-pipeline compare-contracts --old contracts/orders_v1.yaml --new contracts/orders_v2.yaml
+contract-pipeline compare-contracts --old contracts/orders_v1.yaml --new contracts/orders_v1.yaml
 ```
 Breaking examples: removed columns, changed types, nullable-to-required, removal of an allowed value, adding a required non-null column.
 Non-breaking examples: adding an optional/nullable column, expanding allowed values. Consumers should ignore unknown fields to benefit from additive compatibility.
@@ -84,9 +84,10 @@ A synthetic batch of 100,000 order rows was processed locally.
 | Measured elapsed time | 94.67 seconds |
 | Measured throughput | 1,056 rows/second |
 The same batch was rerun successfully, and the target remained at 99,993 rows with no duplicate order IDs. Performance measurements are from a local run and may vary with hardware and system load.
+A potential optimization is to reduce repeated full-target CSV reads and rewrites by using a storage format or database that supports keyed upserts as data volume grows.
 
 ## Recovery and reruns
-Use a stable `--run-id` to make a run's artifacts easy to locate. Each run writes to its own run directory. Re-running the same input is safe for target uniqueness because publish is keyed by `order_id`. For backfills, use a distinct run ID and retain the original input file; inspect the run report and quarantine before publishing downstream.
+Supply an explicit `--run-id` to make run artifacts easy to locate and identify consistently. If omitted, the pipeline generates a unique UUID. Each run writes to its own run directory. Re-running the same input is safe for target uniqueness because publish is keyed by `order_id`. For backfills, use a distinct run ID and retain the original input file; inspect the run report and quarantine before publishing downstream.
 
 ## Security
 Only synthetic data is included. Do not commit secrets, access tokens, credentials, or sensitive real customer data.
