@@ -9,7 +9,7 @@ A local-first data engineering project that validates producer batches against a
 - Primary-key duplicate checks and customer referential integrity.
 - Deterministic derived `order_date`, run ID, timestamps, counts, throughput, and JSON report.
 - Reproducible synthetic data generator with a fixed random seed.
-- Automated tests for valid input, empty input, missing columns, duplicate keys, invalid status/amount, and unknown customers.
+- Automated tests for happy path, empty input, missing columns, duplicates, invalid values, unknown references, unexpected columns, schema compatibility, deterministic generation, failed-run reporting, out-of-order records, and reruns.
 - Idempotent target publish keyed by `order_id`.
 
 ## Requirements
@@ -30,7 +30,7 @@ pip install -e ".[dev]"
 ## Quick start
 Generate a 100-row sample and a matching synthetic customer reference file:
 ```bash
-contract-pipeline generate --output data/input/orders.csv --rows 100 --seed 42
+contract-pipeline generate --output data/input/orders.csv --rows 100 --seed 42 --as-of 2026-01-01T00:00:00Z
 ```
 
 Run the pipeline:
@@ -40,7 +40,7 @@ contract-pipeline run --input data/input/orders.csv --contract contracts/orders_
 
 Generate a larger batch:
 ```bash
-contract-pipeline generate --output data/input/orders_100k.csv --rows 100000 --seed 42
+contract-pipeline generate --output data/input/orders_100k.csv --rows 100000 --seed 42 --as-of 2026-01-01T00:00:00Z
 contract-pipeline run --input data/input/orders_100k.csv --contract contracts/orders_v1.yaml --customers data/input/customers.csv --output-dir data/output --run-id scale-100k
 ```
 
@@ -51,17 +51,20 @@ pytest -q
 
 ## Output artifacts
 Each run writes to `data/output/runs/<run_id>/`:
-- `accepted_orders.csv`: accepted records plus deterministic derived field `order_date`.
-- `quarantine.csv`: rejected records and `reject_reason`.
+- `accepted_orders.csv`: accepted records plus deterministic derived field `order_date` and `run_id` lineage.
+- `quarantine.csv`: rejected records, `reject_reason`, and `run_id` lineage.
 - `schema_changes.json`: missing/unexpected schema columns and severity.
 - `run_report.json`: run status, input/accepted/rejected counts, timing, throughput, and artifact paths.
 
-The current-state published target is `data/output/orders_target.csv`. Publishing maintains one row per `order_id` and keeps the record with the latest `updated_at`. If timestamps are equal, the existing target record is retained.
+The current-state published target is `data/output/orders_target.csv`. Publishing is idempotent by `order_id`: a repeated key replaces the previous target row instead of adding another copy.
+
+## Included example artifacts
+A reproducible 100-row input sample is included under `examples/sample_input/`. A completed example run, including accepted rows, quarantine, schema-change report, and run report, is included under `examples/sample_output/`.
 
 ## Contract compatibility policy
 Use `compare-contracts` to compare contract versions:
 ```bash
-contract-pipeline compare-contracts --old contracts/orders_v1.yaml --new contracts/orders_v1.yaml
+contract-pipeline compare-contracts --old contracts/orders_v1.yaml --new contracts/orders_v2.yaml
 ```
 Breaking examples: removed columns, changed types, nullable-to-required, removal of an allowed value, adding a required non-null column.
 Non-breaking examples: adding an optional/nullable column, expanding allowed values. Consumers should ignore unknown fields to benefit from additive compatibility.
@@ -71,26 +74,14 @@ Producer CSV/JSON -> YAML contract and schema check -> row validation -> accepte
 Invalid records -> quarantine with reasons.
 Every run -> schema report and operational JSON report.
 
-## Performance benchmark
-A synthetic batch of 100,000 order rows was processed locally.
-| Metric | Result |
-|---|---:|
-| Input rows | 100,000 |
-| Accepted rows | 99,993 |
-| Rejected rows | 7 |
-| Reconciliation | 100,000 = 99,993 + 7 |
-| Target rows after publish | 99,993 |
-| Duplicate target order IDs | 0 |
-| Measured elapsed time | 94.67 seconds |
-| Measured throughput | 1,056 rows/second |
-The same batch was rerun successfully, and the target remained at 99,993 rows with no duplicate order IDs. Performance measurements are from a local run and may vary with hardware and system load.
-A potential optimization is to reduce repeated full-target CSV reads and rewrites by using a storage format or database that supports keyed upserts as data volume grows.
-
 ## Recovery and reruns
-Supply an explicit `--run-id` to make run artifacts easy to locate and identify consistently. If omitted, the pipeline generates a unique UUID. Each run writes to its own run directory. Re-running the same input is safe for target uniqueness because publish is keyed by `order_id`. For backfills, use a distinct run ID and retain the original input file; inspect the run report and quarantine before publishing downstream.
+Use a stable `--run-id` to make a run's artifacts easy to locate. Failed runs also write `run_report.json` with status and failure reason before the error is raised to the caller. Each run writes to its own run directory. Re-running the same input is safe for target uniqueness because publish is keyed by `order_id`. For backfills, use a distinct run ID and retain the original input file; inspect the run report and quarantine before publishing downstream.
 
 ## Security
 Only synthetic data is included. Do not commit secrets, access tokens, credentials, or sensitive real customer data.
+
+## Reproducibility and reconciliation
+The generator uses a local seeded random-number generator and a fixed `--as-of` timestamp, so the same seed, row count, and reference timestamp produce byte-identical CSV output. The run report includes reconciliation assertions for input = accepted + rejected and target primary-key uniqueness.
 
 ## Known limitations
 - Local, single-process execution; no orchestration or distributed processing.

@@ -11,6 +11,7 @@ def main():
     gen.add_argument("--output", default="data/input/orders.csv")
     gen.add_argument("--rows", type=int, default=100)
     gen.add_argument("--seed", type=int, default=42)
+    gen.add_argument("--as-of", default="2026-01-01T00:00:00Z", help="Fixed reference timestamp for reproducible data")
     run = sub.add_parser("run", help="Run validation and publish accepted records")
     run.add_argument("--input", default="data/input/orders.csv")
     run.add_argument("--contract", default="contracts/orders_v1.yaml")
@@ -22,7 +23,7 @@ def main():
     cmp.add_argument("--new", required=True)
     args = parser.parse_args()
     if args.command == "generate":
-        generate_dataset(args.output, args.rows, args.seed)
+        generate_dataset(args.output, args.rows, args.seed, as_of=args.as_of)
         print(f"Generated {args.rows} rows at {args.output}")
     elif args.command == "run":
         report = run_pipeline(args.input, args.contract, args.output_dir, args.customers, args.run_id)

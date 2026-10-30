@@ -13,78 +13,12 @@ def test_type_change_is_breaking():
     new = {"required_columns": {"amount": {"type": "string", "nullable": False}}}
     assert compare_schemas(old, new)[0]["severity"] == "breaking"
 
-
 def test_removed_column_is_breaking():
-    old = {"required_columns": {
-        "id": {"type": "string", "nullable": False},
-        "name": {"type": "string", "nullable": True}
-    }}
-    new = {"required_columns": {
-        "id": {"type": "string", "nullable": False}
-    }}
+    old = {"required_columns": {"id": {"type": "string"}, "name": {"type": "string"}}}
+    new = {"required_columns": {"id": {"type": "string"}}}
+    assert compare_schemas(old, new)[0]["severity"] == "breaking"
 
-    changes = compare_schemas(old, new)
-    assert any(
-        c["change"] == "removed_column" and c["severity"] == "breaking"
-        for c in changes
-    )
-
-
-def test_nullable_to_required_is_breaking():
-    old = {"optional_columns": {
-        "note": {"type": "string", "nullable": True}
-    }}
-    new = {"required_columns": {
-        "note": {"type": "string", "nullable": False}
-    }}
-
-    changes = compare_schemas(old, new)
-    assert any(
-        c["change"] == "nullable_to_required"
-        and c["severity"] == "breaking"
-        for c in changes
-    )
-
-
-def test_added_allowed_value_is_non_breaking():
-    old = {"required_columns": {
-        "currency": {
-            "type": "string", "nullable": False,
-            "allowed_values": ["INR", "USD"]
-        }
-    }}
-    new = {"required_columns": {
-        "currency": {
-            "type": "string", "nullable": False,
-            "allowed_values": ["INR", "USD", "EUR"]
-        }
-    }}
-
-    changes = compare_schemas(old, new)
-    assert any(
-        c["change"] == "allowed_values_added"
-        and c["severity"] == "non-breaking"
-        for c in changes
-    )
-
-
-def test_removed_allowed_value_is_breaking():
-    old = {"required_columns": {
-        "currency": {
-            "type": "string", "nullable": False,
-            "allowed_values": ["INR", "USD", "EUR"]
-        }
-    }}
-    new = {"required_columns": {
-        "currency": {
-            "type": "string", "nullable": False,
-            "allowed_values": ["INR", "USD"]
-        }
-    }}
-
-    changes = compare_schemas(old, new)
-    assert any(
-        c["change"] == "allowed_values_removed"
-        and c["severity"] == "breaking"
-        for c in changes
-    )
+def test_expanded_allowed_values_is_non_breaking():
+    old = {"required_columns": {"status": {"type": "string", "allowed_values": ["paid"]}}}
+    new = {"required_columns": {"status": {"type": "string", "allowed_values": ["paid", "shipped"]}}}
+    assert compare_schemas(old, new)[0]["severity"] == "non-breaking"

@@ -15,10 +15,11 @@
 | status | string | No | created, paid, shipped, cancelled, refunded |
 | updated_at | timestamp | No | ISO-8601 |
 | source_file | string | Yes | Input file provenance; added by pipeline if absent |
+| run_id | string | No in run outputs | Execution identifier attached to accepted and quarantined rows |
 | order_date | string | Derived | UTC date derived from order_ts |
 
 ## Entity: customers
 **Grain:** one row per customer. `customer_id` is the key. The starter generator creates synthetic customer IDs.
 
 ## Reject traceability
-Every rejected record retains its original fields and has `reject_reason`, with one or more semicolon-separated validation failures. Run-specific output is stored under `data/output/runs/<run_id>/`.
+Every rejected record retains its original fields and has `reject_reason`, with one or more semicolon-separated validation failures. Both accepted and rejected rows carry `run_id` for execution-level traceability. Run-specific output is stored under `data/output/runs/<run_id>/`.

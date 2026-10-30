@@ -8,3 +8,8 @@
 - **Run isolation:** each run writes artifacts into its own `runs/<run_id>` directory, while the published target is a current-state view.
 - **Limitations:** this is a single-process local prototype, not a distributed scheduler. Schema comparison is intentionally compact and should be extended for nested schemas, semantic version enforcement, and consumer-specific compatibility policies in production.
 - **Optimization:** vectorize validation for large datasets and consider Parquet/Polars or a database-backed target when volume and query patterns justify it.
+
+- **Reproducibility:** generation uses a seeded `random.Random` instance and a fixed/configurable `--as-of` timestamp; the same inputs produce byte-identical sample files.
+- **Failure observability:** the pipeline writes a failed `run_report.json` with the exception type and message, then re-raises the error so callers still receive a non-zero failure.
+- **Lineage:** accepted and quarantined records include `run_id`; source provenance remains in `source_file`.
+- **Duplicate policy:** invalid records do not reserve a primary key; the first valid occurrence wins within a batch. Publishing to the current-state target keeps the last accepted record for a key across runs.

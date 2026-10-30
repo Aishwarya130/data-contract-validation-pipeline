@@ -19,94 +19,78 @@ def run_pipeline(input_path: str | Path, contract_path: str | Path, output_dir: 
     started = time.perf_counter()
     run_id = run_id or str(uuid.uuid4())
     input_path, output_dir = Path(input_path), Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
     run_dir = output_dir / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    contract = load_contract(contract_path)
-    df = _read_input(input_path)
-    customers = None
-    if customers_path:
-        customer_df = pd.read_csv(customers_path, dtype={"customer_id": "string"})
-        customers = set(customer_df["customer_id"].dropna().astype(str))
-    if "source_file" not in df.columns:
-        df["source_file"] = input_path.name
-
-    accepted, rejected, schema_changes = validate_batch(df, contract, customers=customers)
-    # Deterministic derived fields.
-    if not accepted.empty:
-        accepted["order_ts"] = pd.to_datetime(accepted["order_ts"], utc=True).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-        accepted["updated_at"] = pd.to_datetime(accepted["updated_at"], utc=True).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-        accepted["amount"] = pd.to_numeric(accepted["amount"]).round(2)
-        accepted["order_date"] = pd.to_datetime(accepted["order_ts"], utc=True).dt.strftime("%Y-%m-%d")
-    accepted_path = run_dir / "accepted_orders.csv"
-    rejected_path = run_dir / "quarantine.csv"
-    schema_path = run_dir / "schema_changes.json"
-    accepted.to_csv(accepted_path, index=False)
-    rejected.to_csv(rejected_path, index=False)
-    schema_path.write_text(json.dumps(schema_changes, indent=2), encoding="utf-8")
-
-   
-
-    # Idempotent publish keyed by order_id.
-    # Keep the record with the newest updated_at timestamp.
-    target_path = output_dir / "orders_target.csv"
-
-    if target_path.exists():
-        prior = pd.read_csv(
-            target_path,
-            dtype={"order_id": "string", "customer_id": "string"}
-        )
-        combined = pd.concat([prior, accepted], ignore_index=True)
-
-        if not combined.empty:
-            combined["_updated_at_sort"] = pd.to_datetime(
-                combined["updated_at"], utc=True, errors="coerce"
-            )
-            # Existing target records come first when timestamps tie.
-            combined["_existing_priority"] = range(len(combined))
-
-            combined = combined.sort_values(
-                ["_updated_at_sort", "_existing_priority"],
-                ascending=[False, True],
-                na_position="last"
-            )
-            combined = combined.drop_duplicates(
-                subset=["order_id"], keep="first"
-            )
-            combined = combined.drop(
-                columns=["_updated_at_sort", "_existing_priority"]
-            )
-    else:
-        combined = accepted.copy()
-
-    combined.to_csv(target_path, index=False)
-
-    elapsed = round(time.perf_counter() - started, 4)
-    ended = datetime.now(timezone.utc)
-    report = {
-        "run_id": run_id,
-        "status": "success" if not schema_changes or all(
-            x["severity"] != "breaking" for x in schema_changes
-        ) else "completed_with_schema_break",
-        "started_at": start.isoformat(),
-        "ended_at": ended.isoformat(),
-        "input_file": input_path.name,
-        "input_rows": int(len(df)),
-        "accepted_rows": int(len(accepted)),
-        "rejected_rows": int(len(rejected)),
-        "schema_change_count": len(schema_changes),
-        "schema_changes": schema_changes,
-        "target_rows_after_publish": int(len(combined)),
-        "elapsed_seconds": elapsed,
-        "rows_per_second": round(len(df) / elapsed, 2) if elapsed > 0 else None,
-        "artifacts": {
-            "accepted": str(accepted_path),
-            "quarantine": str(rejected_path),
-            "schema_changes": str(schema_path),
-            "target": str(target_path)
-        }
+    report_path = run_dir / "run_report.json"
+    base_report = {
+        "run_id": run_id, "status": "running", "started_at": start.isoformat(),
+        "input_file": input_path.name, "input_rows": 0, "accepted_rows": 0,
+        "rejected_rows": 0, "schema_change_count": 0, "schema_changes": [],
+        "target_rows_after_publish": None
     }
-    (run_dir / "run_report.json").write_text(
-        json.dumps(report, indent=2), encoding="utf-8"
-    )
-    return report
+    try:
+        contract = load_contract(contract_path)
+        df = _read_input(input_path)
+        base_report["input_rows"] = int(len(df))
+        customers = None
+        if customers_path:
+            customer_df = pd.read_csv(customers_path, dtype={"customer_id": "string"})
+            if "customer_id" not in customer_df.columns:
+                raise ValueError("Customer reference file must contain customer_id")
+            customers = set(customer_df["customer_id"].dropna().astype(str))
+        if "source_file" not in df.columns:
+            df["source_file"] = input_path.name
+
+        accepted, rejected, schema_changes = validate_batch(df, contract, customers=customers)
+        # Attach run lineage to both accepted and rejected records.
+        accepted["run_id"] = run_id
+        rejected["run_id"] = run_id
+        if not accepted.empty:
+            accepted["order_ts"] = pd.to_datetime(accepted["order_ts"], utc=True).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            accepted["updated_at"] = pd.to_datetime(accepted["updated_at"], utc=True).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            accepted["amount"] = pd.to_numeric(accepted["amount"]).round(2)
+            accepted["order_date"] = pd.to_datetime(accepted["order_ts"], utc=True).dt.strftime("%Y-%m-%d")
+        accepted_path = run_dir / "accepted_orders.csv"
+        rejected_path = run_dir / "quarantine.csv"
+        schema_path = run_dir / "schema_changes.json"
+        accepted.to_csv(accepted_path, index=False)
+        rejected.to_csv(rejected_path, index=False)
+        schema_path.write_text(json.dumps(schema_changes, indent=2), encoding="utf-8")
+
+        target_path = output_dir / "orders_target.csv"
+        if target_path.exists():
+            prior = pd.read_csv(target_path, dtype={"order_id": "string"})
+            combined = pd.concat([prior, accepted], ignore_index=True)
+            combined = combined.drop_duplicates(subset=["order_id"], keep="last")
+        else:
+            combined = accepted.copy()
+        combined.to_csv(target_path, index=False)
+
+        elapsed = round(time.perf_counter() - started, 4)
+        ended = datetime.now(timezone.utc)
+        breaking = any(item["severity"] == "breaking" for item in schema_changes)
+        report = {
+            **base_report,
+            "status": "completed_with_schema_break" if breaking else "success",
+            "ended_at": ended.isoformat(), "accepted_rows": int(len(accepted)),
+            "rejected_rows": int(len(rejected)), "schema_change_count": len(schema_changes),
+            "schema_changes": schema_changes, "target_rows_after_publish": int(len(combined)),
+            "elapsed_seconds": elapsed,
+            "rows_per_second": round(len(df) / elapsed, 2) if elapsed > 0 else None,
+            "reconciliation": {
+                "input_equals_accepted_plus_rejected": len(df) == len(accepted) + len(rejected),
+                "target_primary_key_unique": bool(combined["order_id"].is_unique) if "order_id" in combined else True
+            },
+            "artifacts": {"accepted": str(accepted_path), "quarantine": str(rejected_path),
+                          "schema_changes": str(schema_path), "target": str(target_path)}
+        }
+        report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        return report
+    except Exception as exc:
+        elapsed = round(time.perf_counter() - started, 4)
+        failed = {
+            **base_report, "status": "failed", "ended_at": datetime.now(timezone.utc).isoformat(),
+            "elapsed_seconds": elapsed, "failure_reason": f"{type(exc).__name__}: {exc}"
+        }
+        report_path.write_text(json.dumps(failed, indent=2), encoding="utf-8")
+        raise

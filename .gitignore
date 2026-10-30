@@ -3,10 +3,6 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 .env
-.env.*
-!.env.example
 data/output/*
 !data/output/.gitkeep
-data/input/orders_100k.csv
 *.log
-src/*.egg-info/

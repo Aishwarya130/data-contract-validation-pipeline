@@ -1,17 +1,21 @@
 {
   "run_id": "demo-001",
   "status": "success",
-  "started_at": "2026-10-28T18:18:21.772613+00:00",
-  "ended_at": "2026-10-28T18:18:22.003822+00:00",
+  "started_at": "2026-10-30T12:14:00.843311+00:00",
   "input_file": "orders.csv",
   "input_rows": 100,
   "accepted_rows": 93,
   "rejected_rows": 7,
   "schema_change_count": 0,
   "schema_changes": [],
-  "target_rows_after_publish": 93,
-  "elapsed_seconds": 0.2306,
-  "rows_per_second": 433.65,
+  "target_rows_after_publish": 99993,
+  "ended_at": "2026-10-30T12:14:01.498994+00:00",
+  "elapsed_seconds": 0.6553,
+  "rows_per_second": 152.6,
+  "reconciliation": {
+    "input_equals_accepted_plus_rejected": true,
+    "target_primary_key_unique": true
+  },
   "artifacts": {
     "accepted": "data\\output\\runs\\demo-001\\accepted_orders.csv",
     "quarantine": "data\\output\\runs\\demo-001\\quarantine.csv",

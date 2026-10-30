@@ -1,0 +1,25 @@
+{
+  "run_id": "sample-001",
+  "status": "success",
+  "started_at": "2026-10-30T11:55:34.535996+00:00",
+  "input_file": "orders.csv",
+  "input_rows": 100,
+  "accepted_rows": 93,
+  "rejected_rows": 7,
+  "schema_change_count": 0,
+  "schema_changes": [],
+  "target_rows_after_publish": 93,
+  "ended_at": "2026-10-30T11:55:34.666685+00:00",
+  "elapsed_seconds": 0.1307,
+  "rows_per_second": 765.11,
+  "reconciliation": {
+    "input_equals_accepted_plus_rejected": true,
+    "target_primary_key_unique": true
+  },
+  "artifacts": {
+    "accepted": "/mnt/data/data_contract_pipeline_simple/data_contract_pipeline/examples/sample_output/runs/sample-001/accepted_orders.csv",
+    "quarantine": "/mnt/data/data_contract_pipeline_simple/data_contract_pipeline/examples/sample_output/runs/sample-001/quarantine.csv",
+    "schema_changes": "/mnt/data/data_contract_pipeline_simple/data_contract_pipeline/examples/sample_output/runs/sample-001/schema_changes.json",
+    "target": "/mnt/data/data_contract_pipeline_simple/data_contract_pipeline/examples/sample_output/orders_target.csv"
+  }
+}

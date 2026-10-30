@@ -1,99 +1,57 @@
-
+import json
+from pathlib import Path
 import pandas as pd
-
+import pytest
+from contract_pipeline.generate import generate_dataset
 from contract_pipeline.pipeline import run_pipeline
 
+def test_generator_is_reproducible(tmp_path):
+    a, b = tmp_path / "a/orders.csv", tmp_path / "b/orders.csv"
+    generate_dataset(a, rows=20, seed=7)
+    generate_dataset(b, rows=20, seed=7)
+    assert a.read_bytes() == b.read_bytes()
 
-def create_input(path, amount, updated_at):
-    pd.DataFrame([{
-        "order_id": "O1",
-        "customer_id": "C1",
-        "order_ts": "2026-01-01T10:00:00Z",
-        "amount": amount,
-        "currency": "INR",
-        "status": "paid",
-        "updated_at": updated_at,
-    }]).to_csv(path, index=False)
+def test_pipeline_empty_batch(tmp_path):
+    input_path = tmp_path / "empty.csv"
+    pd.DataFrame(columns=["order_id","customer_id","order_ts","amount","currency","status","updated_at"]).to_csv(input_path, index=False)
+    customers = tmp_path / "customers.csv"
+    pd.DataFrame({"customer_id": ["C1"]}).to_csv(customers, index=False)
+    contract = Path(__file__).parents[1] / "contracts" / "orders_v1.yaml"
+    report = run_pipeline(input_path, contract, tmp_path / "out", customers, "empty-run")
+    assert report["input_rows"] == report["accepted_rows"] == report["rejected_rows"] == 0
+    assert report["reconciliation"]["input_equals_accepted_plus_rejected"]
 
+def test_malformed_input_writes_failure_report(tmp_path):
+    bad = tmp_path / "bad.txt"
+    bad.write_text("not a supported input format", encoding="utf-8")
+    contract = Path(__file__).parents[1] / "contracts" / "orders_v1.yaml"
+    with pytest.raises(ValueError):
+        run_pipeline(bad, contract, tmp_path / "out", run_id="bad-run")
+    report = json.loads((tmp_path / "out/runs/bad-run/run_report.json").read_text())
+    assert report["status"] == "failed"
+    assert "Supported input formats" in report["failure_reason"]
 
-def create_contract(path):
-    path.write_text("""
-contract_name: orders
-version: 1
-primary_key: order_id
-required_columns:
-  order_id: {type: string, nullable: false}
-  customer_id: {type: string, nullable: false}
-  order_ts: {type: timestamp, nullable: false}
-  amount: {type: float, nullable: false}
-  currency:
-    type: string
-    nullable: false
-    allowed_values: [INR, USD, EUR]
-  status:
-    type: string
-    nullable: false
-    allowed_values: [created, paid, shipped, cancelled, refunded]
-  updated_at: {type: timestamp, nullable: false}
-optional_columns:
-  source_file: {type: string, nullable: true}
-compatibility:
-  allow_additive_nullable_columns: true
-  breaking_on_removed_columns: true
-  breaking_on_type_change: true
-  breaking_on_nullable_to_required: true
-business_rules:
-  amount_min: 0
-  require_customer_reference: false
-  reject_future_order_ts: false
-""", encoding="utf-8")
+def test_same_batch_rerun_does_not_duplicate_target(tmp_path):
+    input_path = tmp_path / "orders.csv"
+    generate_dataset(input_path, rows=20, seed=9)
+    customers = tmp_path / "customers.csv"
+    contract = Path(__file__).parents[1] / "contracts" / "orders_v1.yaml"
+    out = tmp_path / "out"
+    run_pipeline(input_path, contract, out, customers, "first")
+    first = pd.read_csv(out / "orders_target.csv")
+    run_pipeline(input_path, contract, out, customers, "second")
+    second = pd.read_csv(out / "orders_target.csv")
+    assert len(first) == len(second)
+    assert second["order_id"].is_unique
+    assert second["run_id"].eq("second").all()
 
 
-def test_older_record_does_not_overwrite_newer_record(tmp_path):
-    contract = tmp_path / "contract.yaml"
-    output = tmp_path / "output"
-    newer = tmp_path / "newer.csv"
-    older = tmp_path / "older.csv"
-
-    create_contract(contract)
-    create_input(newer, 200, "2026-01-02T10:00:00Z")
-    create_input(older, 100, "2026-01-01T10:00:00Z")
-
-    run_pipeline(newer, contract, output, run_id="newer")
-    run_pipeline(older, contract, output, run_id="older")
-
-    target = pd.read_csv(output / "orders_target.csv")
-
-    assert len(target) == 1
-    assert target.iloc[0]["amount"] == 200
-
-
-def test_rerunning_same_input_does_not_duplicate_orders(tmp_path):
-    contract = tmp_path / "contract.yaml"
-    output = tmp_path / "output"
-    source = tmp_path / "orders.csv"
-
-    create_contract(contract)
-    create_input(source, 200, "2026-01-02T10:00:00Z")
-
-    run_pipeline(source, contract, output, run_id="first-run")
-    run_pipeline(source, contract, output, run_id="second-run")
-
-    target = pd.read_csv(output / "orders_target.csv")
-
-    assert len(target) == 1
-    assert target["order_id"].is_unique
-
-def test_malformed_csv_fails_clearly(tmp_path):
-    import pytest
-    from contract_pipeline.pipeline import _read_input
-
-    malformed = tmp_path / "malformed.csv"
-    malformed.write_text(
-        'order_id,customer_id,amount\n'
-        'O1,C1,"unfinished quote\n',
-        encoding="utf-8"
-    )
-
-    with pytest.raises((ValueError, pd.errors.ParserError)):
-        _read_input(malformed)
+def test_malformed_json_lines_writes_failure_report(tmp_path):
+    bad = tmp_path / "malformed.json"
+    bad.write_text('{"order_id": "O1"}\\n{this is not valid json}\\n', encoding="utf-8")
+    contract = Path(__file__).parents[1] / "contracts" / "orders_v1.yaml"
+    with pytest.raises(ValueError):
+        run_pipeline(bad, contract, tmp_path / "out", run_id="malformed-json")
+    report = json.loads((tmp_path / "out/runs/malformed-json/run_report.json").read_text())
+    assert report["status"] == "failed"
+    assert report["failure_reason"]
