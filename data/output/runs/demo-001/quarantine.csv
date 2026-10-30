@@ -1,0 +1,8 @@
+order_id,customer_id,order_ts,amount,currency,status,updated_at,source_file,reject_reason
+O0000001,C00017,2026-10-14T19:13:08Z,-10,USD,created,2026-10-14T19:20:08Z,orders.csv,amount:below_minimum
+O0000002,C00007,2026-10-17T10:51:08Z,12633.88,INR,in_transit,2026-10-17T11:41:08Z,orders.csv,status:value_not_allowed
+O0000003,C_UNKNOWN,2026-08-05T18:22:08Z,10488.0,USD,refunded,2026-08-05T19:33:08Z,orders.csv,customer_id:unknown_reference
+O0000000,C00013,2026-10-28T12:52:08Z,8506.26,INR,paid,2026-10-28T16:07:08Z,orders.csv,order_id:duplicate_key_in_batch
+O0000005,C00002,2026-09-15T14:49:08Z,9498.18,,shipped,2026-09-15T17:23:08Z,orders.csv,currency:null_not_allowed
+O0000006,C00014,2026-10-30T18:18:08Z,13405.7,USD,created,2026-09-25T19:11:08Z,orders.csv,order_ts:future_timestamp
+O0000007,C00019,2026-09-20T20:51:08Z,not_a_number,USD,refunded,2026-09-20T21:40:08Z,orders.csv,amount:invalid_type_expected_float
